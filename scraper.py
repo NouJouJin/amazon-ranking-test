@@ -63,7 +63,7 @@ def fetch_page(keyword: str, page: int, delay: float) -> BeautifulSoup | None:
             logger.warning("  CAPTCHAが検出されました。しばらく時間をおいて再実行してください。")
             return None
 
-        return BeautifulSoup(response.text, "html.parser")
+        return BeautifulSoup(response.text, "html.parser")  # 標準ライブラリのパーサーを使用（lxml不要）
 
     except requests.RequestException as e:
         logger.error(f"  ページ取得エラー: {e}")
