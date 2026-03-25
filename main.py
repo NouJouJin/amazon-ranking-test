@@ -1,3 +1,4 @@
+import argparse
 import csv
 import logging
 import os
@@ -33,6 +34,13 @@ def append_to_csv(output_path: str, rows: list[dict]) -> None:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true", help="HTMLを保存し広告判定ログを詳細出力する")
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
     config = load_config()
     settings = config.get("settings", {})
     targets = config.get("targets", [])
@@ -60,7 +68,7 @@ def main():
             continue
 
         logger.info(f"\nキーワード「{keyword}」/ ASIN: {asin}")
-        rank = find_rank(keyword, asin, max_pages=max_pages, delay=delay)
+        rank = find_rank(keyword, asin, max_pages=max_pages, delay=delay, debug=args.debug)
 
         row = {
             "recorded_at": recorded_at,

@@ -19,36 +19,66 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xhtml;q=0.9,*/*;q=0.8",
 }
 
+# スポンサー判定で使うテキスト
+_SPONSORED_TEXTS = {"スポンサー", "Sponsored"}
 
-def is_sponsored(item) -> bool:
-    """広告（スポンサー）商品かどうかを判定する"""
-    # パターン1: data-component-type 属性
+
+def _sponsored_reason(item) -> str | None:
+    """
+    広告商品かどうかを判定し、該当する場合は理由を返す。
+    非広告の場合は None を返す。
+    """
+    # パターン1: data-component-type 属性（最も確実）
     if item.get("data-component-type") == "sp-sponsored-result":
-        return True
+        return "data-component-type=sp-sponsored-result"
 
-    # パターン2: スポンサーラベルのテキスト
-    sponsored_labels = item.select(
+    # パターン2: data-ad-details 属性
+    if item.get("data-ad-details"):
+        return "data-ad-details attribute"
+
+    # パターン3: AdHolder クラス
+    classes = " ".join(item.get("class", []))
+    if "AdHolder" in classes:
+        return "AdHolder class"
+
+    # パターン4: CSSセレクタで広告ラベル要素を探す
+    sponsored_nodes = item.select(
         "span.puis-sponsored-label-text, "
-        "span[class*='sponsored'], "
-        "div[data-component-type='sp-sponsored-result']"
+        "span[class*='sponsored-label'], "
+        "div[data-component-type='sp-sponsored-result'], "
+        "i[class*='sponsored']"
     )
-    if sponsored_labels:
-        return True
+    if sponsored_nodes:
+        return f"CSS selector match: {sponsored_nodes[0]}"
 
-    # パターン3: テキストで「スポンサー」を含む要素
-    for tag in item.find_all(["span", "div"], string=True):
+    # パターン5: aria-label で「スポンサー」を含む要素
+    for tag in item.find_all(True, attrs={"aria-label": True}):
+        if tag["aria-label"].strip() in _SPONSORED_TEXTS:
+            return f"aria-label: {tag['aria-label']}"
+
+    # パターン6: テキストで「スポンサー」を含む要素（深いネストも対応）
+    # ※ string=True では直下テキストのみしか拾えないため get_text() を使用
+    for tag in item.find_all(["span", "div"]):
         text = tag.get_text(strip=True)
-        if text in ("スポンサー", "Sponsored"):
-            return True
+        if text in _SPONSORED_TEXTS:
+            return f"text match: {text!r}"
 
-    return False
+    return None
 
 
-def fetch_page(keyword: str, page: int, delay: float) -> BeautifulSoup | None:
+def is_sponsored(item, debug: bool = False) -> bool:
+    reason = _sponsored_reason(item)
+    if reason and debug:
+        logger.debug(f"    [広告判定] {item.get('data-asin', '?')} → {reason}")
+    return reason is not None
+
+
+def fetch_page(
+    keyword: str, page: int, delay: float, debug: bool = False, debug_dir: str = "debug"
+) -> BeautifulSoup | None:
     """指定ページの検索結果を取得してパースする"""
     params = {"k": keyword, "page": page}
     try:
-        # ランダムな遅延でbot検出を回避
         sleep_time = delay + random.uniform(0.5, 1.5)
         logger.info(f"  ページ{page}を取得中（{sleep_time:.1f}秒待機）...")
         time.sleep(sleep_time)
@@ -63,27 +93,51 @@ def fetch_page(keyword: str, page: int, delay: float) -> BeautifulSoup | None:
             logger.warning("  CAPTCHAが検出されました。しばらく時間をおいて再実行してください。")
             return None
 
-        return BeautifulSoup(response.text, "html.parser")  # 標準ライブラリのパーサーを使用（lxml不要）
+        # デバッグモード: HTMLをファイルに保存して目視確認できるようにする
+        if debug:
+            import os
+            os.makedirs(debug_dir, exist_ok=True)
+            safe_kw = keyword.replace(" ", "_")
+            path = os.path.join(debug_dir, f"{safe_kw}_page{page}.html")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(response.text)
+            logger.info(f"  [DEBUG] HTMLを保存しました: {path}")
+
+        return BeautifulSoup(response.text, "html.parser")
 
     except requests.RequestException as e:
         logger.error(f"  ページ取得エラー: {e}")
         return None
 
 
-def find_rank(keyword: str, target_asin: str, max_pages: int, delay: float) -> int | None:
+def find_rank(
+    keyword: str,
+    target_asin: str,
+    max_pages: int,
+    delay: float,
+    debug: bool = False,
+) -> int | None:
     """
     キーワードで検索し、広告除外後の順位を返す。
     見つからない場合は None を返す。
     """
-    organic_rank = 0  # 広告除外後のカウンター
+    organic_rank = 0
 
     for page in range(1, max_pages + 1):
-        soup = fetch_page(keyword, page, delay)
+        soup = fetch_page(keyword, page, delay, debug=debug)
         if soup is None:
             break
 
-        # 検索結果の商品リストを取得
-        items = soup.select("div[data-asin]")
+        # data-index を持つ要素のみ対象（ネストした子要素を除外）
+        # data-index はAmazonが検索結果の各アイテムに付与する連番
+        items = soup.select("div[data-asin][data-index]")
+        if not items:
+            # フォールバック: data-index がない場合は data-asin のみで取得
+            items = [
+                el for el in soup.select("div[data-asin]")
+                if el.get("data-asin")  # 空文字除外
+            ]
+
         if not items:
             logger.info(f"  ページ{page}に商品が見つかりませんでした。検索終了。")
             break
@@ -93,12 +147,12 @@ def find_rank(keyword: str, target_asin: str, max_pages: int, delay: float) -> i
             if not asin:
                 continue
 
-            if is_sponsored(item):
-                logger.debug(f"  スキップ（広告）: {asin}")
+            if is_sponsored(item, debug=debug):
+                logger.info(f"  [広告スキップ] {asin}")
                 continue
 
             organic_rank += 1
-            logger.debug(f"  自然順位 {organic_rank}: {asin}")
+            logger.info(f"  自然順位 {organic_rank}: {asin}")
 
             if asin == target_asin:
                 logger.info(f"  発見！ 自然検索順位: {organic_rank}位")
