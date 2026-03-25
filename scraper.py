@@ -56,12 +56,12 @@ def _sponsored_reason(item) -> str | None:
         if tag["aria-label"].strip() in _SPONSORED_TEXTS:
             return f"aria-label: {tag['aria-label']}"
 
-    # パターン6: テキストで「スポンサー」を含む要素（深いネストも対応）
-    # ※ string=True では直下テキストのみしか拾えないため get_text() を使用
-    for tag in item.find_all(["span", "div"]):
-        text = tag.get_text(strip=True)
-        if text in _SPONSORED_TEXTS:
-            return f"text match: {text!r}"
+    # パターン6: span タグの直接テキストのみで「スポンサー」を判定
+    # ※ get_text() は子孫要素のテキストも含むため organic item を誤検出する原因になる
+    # ※ tag.string は直下に文字列のみを持つ要素だけを対象にするため安全
+    for tag in item.find_all("span"):
+        if tag.string and tag.string.strip() in _SPONSORED_TEXTS:
+            return f"span text match: {tag.string.strip()!r}"
 
     return None
 
