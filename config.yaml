@@ -1,0 +1,16 @@
+# Amazon ランキング追跡 設定ファイル
+# keyword: 検索キーワード
+# asin: 追跡対象商品のASIN（Amazonの商品ID）
+# max_pages: 検索結果の最大取得ページ数（1ページ約48件）
+
+targets:
+  - keyword: "マカダミアナッツ"
+    asin: "XXXXXXXXXX"  # 追跡したい商品のASINに変更してください
+  # 以下、最大10件まで追加可能
+  # - keyword: "キーワード2"
+  #   asin: "XXXXXXXXXX"
+
+settings:
+  max_pages: 3          # 最大3ページ（約144件）まで検索
+  request_delay: 3      # リクエスト間隔（秒）。短すぎるとブロックされます
+  output_dir: "results" # CSV出力先ディレクトリ

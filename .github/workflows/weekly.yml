@@ -1,0 +1,38 @@
+name: Weekly Amazon Ranking Check
+
+on:
+  schedule:
+    # 毎週月曜日 午前9時（JST）に実行 = UTC 0:00
+    - cron: "0 0 * * 1"
+  workflow_dispatch: # 手動実行も可能
+
+jobs:
+  check-ranking:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 結果CSVをコミットするため書き込み権限が必要
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ranking check
+        run: python main.py
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/rankings.csv
+          # 変更がある場合のみコミット
+          git diff --cached --quiet || git commit -m "chore: weekly ranking update $(date +'%Y-%m-%d')"
+          git push
