@@ -5,7 +5,7 @@
 
 targets:
   - keyword: "マカダミアナッツ"
-    asin: "XXXXXXXXXX"  # 追跡したい商品のASINに変更してください
+    asin: "B0F66CYK2X"  # 追跡したい商品のASINに変更してください
   # 以下、最大10件まで追加可能
   # - keyword: "キーワード2"
   #   asin: "XXXXXXXXXX"
